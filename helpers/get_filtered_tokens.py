@@ -1,14 +1,23 @@
 import pandas as pd
 import requests
 from datetime import date
-from fetch_ltp import fetch_ltp
 
-def get_filtered_tokens():
-    # Fetch LTP
-    ltp = fetch_ltp()
+def get_filtered_tokens(excel_file_path=None):
+    
+    from .fetch_ltp import fetch_ltp
+    
+    # If excel_file_path is provided, pass it to fetch_ltp
+    if excel_file_path:
+        from .creds_from_excel import credential
+        credentials = credential(excel_file_path)
+        api_key = credentials["API_KEY"]
+        auth_token = credentials["AUTH_TOKEN"]
+        ltp = fetch_ltp(api_key, auth_token)
+    else:
+        ltp = fetch_ltp()
+        
     if ltp is None:
         raise ValueError("Failed to fetch LTP.")
-
 
     url = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
     d = requests.get(url).json() 
@@ -58,14 +67,9 @@ def get_filtered_tokens():
         nifty_optidx_df['expiry'].isin([expiry_date])
     ]
         
- # Return the resulting tokens
+    # Return the resulting tokens
     return filtered_tokens['token'].tolist()
 
-# Print the resulting tokens
-# print(filtered_tokens['token'])
-# Example usage
-tokens = get_filtered_tokens()
-print(tokens)
 
 
 

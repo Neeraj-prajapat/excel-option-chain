@@ -1,39 +1,26 @@
 # Import credentials from config.py
-from api_credential import credential
-from SmartApi.smartWebSocketV2 import SmartWebSocketV2
-from get_filtered_tokens import get_filtered_tokens
-from fetch_ltp import fetch_ltp
+from helpers.creds_from_excel import credential
+from helpers.get_filtered_tokens import get_filtered_tokens
+from helpers.fetch_ltp import fetch_ltp
+from websocket_handler import WebSocketHandler  # Import the new WebSocket handler
 import xlwings as xw
 from datetime import datetime
 from logzero import logger
 
-
 # Fetch credentials
-credentials = credential()
+excel_file_path = "option_chain.xlsm"
+credentials = credential(excel_file_path)
 API_KEY = credentials["API_KEY"]
 CLIENT_CODE = credentials["CLIENT_CODE"]
 FEED_TOKEN = credentials["FEED_TOKEN"]
 AUTH_TOKEN = credentials["AUTH_TOKEN"]
 CORRELATION_ID = credentials["CORRELATION_ID"]
 
-# Use the imported variables
-# print(f"API Key: {API_KEY}")
-# print(f"Client Code: {CLIENT_CODE}")
-# print(f"Auth Token: {AUTH_TOKEN}")
-
 # Fetch LTP
-strike_price_roundup_ltp = fetch_ltp()
+strike_price_roundup_ltp = fetch_ltp(API_KEY, AUTH_TOKEN)
 
-## Getting started with SmartAPI Websocket's
-    ####### Websocket V2 sample code #######
-    
 # WebSocket setup
-token_value = get_filtered_tokens()
-correlation_id = CORRELATION_ID
-action = 1
-mode = 3
-
-
+token_value = get_filtered_tokens(excel_file_path)
 token_list = [
     {
         "exchangeType": 2,
@@ -45,9 +32,7 @@ token_list = [
     }
 ]
 
-
 # Excel setup
-# excel_file_path = r'C:\Users\neera\OneDrive\Desktop\start.xlsx'
 excel_file_path ="option_chain.xlsm"
 wb = xw.Book(excel_file_path)
 sheet_name = "nifty"
@@ -82,152 +67,16 @@ print(nifty_strike_price)
 sheet["Q32"].value = nifty_strike_price
 sheet["P8"].value = strike_price_roundup_ltp
 
- 
-# WebSocket callbacks
-def on_data(wsapp, msg):
-    try:
-        token = int(msg.get("token")) # Ensure token is treated as an integer
-        ltp = msg.get("last_traded_price")/100
-        oi = msg.get("open_interest")/75
-        volume = msg.get("volume_trade_for_the_day")/75
-        open = msg.get("open_price_of_the_day")/75
-        high = msg.get("high_price_of_the_day")/100
-        low = msg.get("low_price_of_the_day")/100
-        close = msg.get("closed_price")/100
-        ltp_chg = ltp - close
-        
-        timestamp = datetime.fromtimestamp(msg["exchange_timestamp"] / 1000).strftime('%Y-%m-%d %H:%M:%S')
+# Initialize and run the WebSocket handler
+ws_handler = WebSocketHandler(
+    auth_token=AUTH_TOKEN,
+    api_key=API_KEY,
+    client_code=CLIENT_CODE,
+    correlation_id=CORRELATION_ID,
+    feed_token=FEED_TOKEN,
+    sheet=sheet,
+    token_list=token_list
+)
 
-        # Logging the received data
-        logger.info(f"Received token: {token}, LTP: {ltp}, OI: {oi}, Timestamp: {timestamp}, VOLUME: {volume}")
-        
-        # Special token handling (NIFTY: 99926000)
-        if token == 99926000:
-            sheet['Q10'].value = ltp
-            return   # Exit the function here, no further processing(for this function)
-    
-        # Iterate through the rows to find the matching token in F or R
-        row = 12  # Start at the base row
-        while sheet[f'F{row}'].value or sheet[f'AB{row}'].value:  # Stop when both are empty
-            call_token = sheet[f'F{row}'].value
-            put_token = sheet[f'AB{row}'].value
-
-
-            if call_token == token:  # If the token matches the call token
-                sheet[f'P11'].value = "LTP"  
-                sheet[f'P{row}'].value = ltp  # Update LTP for the call
-                sheet[f'M11'].value = "OI"   
-                sheet[f'M{row}'].value = oi   # Update OI for the call
-                sheet[f'N11'].value = "VOLUME"
-                sheet[f'N{row}'].value = volume   # Update VOLUME for the 
-                sheet[f'C11'].value = "OPEN"
-                sheet[f'C{row}'].value = open  # Update OPEN for the call
-                sheet[f'D11'].value = "HIGH"
-                sheet[f'D{row}'].value = high   # Update HIGH for the 
-                sheet[f'E11'].value = "LOW"
-                sheet[f'E{row}'].value = low   # Update LOW for the call
-                sheet[f'B11'].value = "CLOSE"
-                sheet[f'B{row}'].value = close   # Update CLOSE for the 
-                sheet[f'O11'].value = "LTP CHG"
-                sheet[f'O{row}'].value = ltp_chg   # Update LTP CHANGE for the call
-                sheet[f'A11'].value = "TIMESTAMP"
-                sheet[f'A{row}'].value = timestamp  # Update timestamp for the call
-                break
-
-            elif put_token == token:  # If the token matches the put token
-                sheet[f'R11'].value = "LTP"  
-                sheet[f'R{row}'].value = ltp  # Update LTP for the put
-                sheet[f'U11'].value = "OI"   
-                sheet[f'U{row}'].value = oi   # Update OI for the put
-                sheet[f'T11'].value = "VOLUME"
-                sheet[f'T{row}'].value = volume   # Update VOLUME for the call
-                sheet[f'AE11'].value = "OPEN"
-                sheet[f'AE{row}'].value = open  # Update OPEN for the 
-                sheet[f'AD11'].value = "HIGH"
-                sheet[f'AD{row}'].value = high   # Update HIGH for the call
-                sheet[f'AC11'].value = "LOW"
-                sheet[f'AC{row}'].value = low   # Update LOW for the call
-                sheet[f'AF11'].value = "CLOSE"
-                sheet[f'AF{row}'].value = close   # Update CLOSE for the 
-                sheet[f'S11'].value = "LTP CHG"
-                sheet[f'S{row}'].value = ltp_chg   # Update LTP CHANGE for the 
-                sheet[f'AG11'].value = "TIMESTAMP"
-                sheet[f'AG{row}'].value = timestamp  # Update timestamp for the put
-                break
-
-            row += 1  # Move to the next row
-
-    except Exception as e:
-        logger.error(f"Error in on_data: {e}")
-
-
-# def on_data(wsapp, message):
-#     logger.info("Ticks: {}".format(message))
-    # close_connection()
-
-def on_open(wsapp):
-    logger.info("on open")
-    sws.subscribe(correlation_id, mode, token_list)
-    # sws.unsubscribe(correlation_id, mode, token_list1)
-
-
-def on_error(wsapp, error):
-    logger.error(error)
-
-
-def on_close(wsapp):
-    logger.info("Close")
-
-
-
-def close_connection():
-    sws.close_connection()
-
-
-# Assign the callbacks.
-sws = SmartWebSocketV2(AUTH_TOKEN, API_KEY, CLIENT_CODE, FEED_TOKEN)
-sws.on_open = on_open
-sws.on_data = on_data
-sws.on_error = on_error
-sws.on_close = on_close
-
-# Start WebSocket connection
-try:
-    logger.info("Starting WebSocket...")
-    sws.connect()
-except KeyboardInterrupt:
-    logger.info("WebSocket connection terminated by user.")
-finally:
-    logger.info("Closing WebSocket connection...")
-    sws.close_connection()
-# sws.connect()
-####### Websocket V2 sample code ENDS Here #######
-
-
-
-
-
-
-#? Important Notes:- 
-#* Safe Approach
-# ltp = msg.get("last_traded_price", 0) / 100  # Default to 0 if the key doesn't exist #*but ye hamesa exist karta hai api me So, no tension
-# OR
-
-# ltp_raw = msg.get("last_traded_price")
-# if ltp_raw is not None:
-#     ltp = ltp_raw / 100
-# else:
-#     ltp = None  # Or any default value you want
-
-
-
-#? RUNNING MARKET STRIKE PRICE(NIFTY=23200 EXPIRY 23 JAN 2024 ) DATA:-
-#* {'subscription_mode': 3, 'exchange_type': 2, 'token': '54786', 'sequence_number': 32056818, 'exchange_timestamp': 1737356263000, 'last_traded_price': 25820, 'subscription_mode_val': 'SNAP_QUOTE', 'last_traded_quantity': 75, 'average_traded_price': 19815, 'volume_trade_for_the_day': 70813950, 'total_buy_quantity': 605175.0, 'total_sell_quantity': 281850.0, 'open_price_of_the_day': 20550, 'high_price_of_the_day': 26900, 'low_price_of_the_day': 16710, 'closed_price': 18380, 'last_traded_timestamp': 1737356261, 'open_interest': 3118800, 'open_interest_change_percentage': 4602115189163712890, 'upper_circuit_limit': 73165, 'lower_circuit_limit': 5, '52_week_high_price': 72990, '52_week_low_price': 0, 'best_5_buy_data': [{'flag': 1, 'quantity': 450, 'price': 25815, 'no of orders': 3}, {'flag': 1, 'quantity': 375, 'price': 25810, 'no of orders': 4}, {'flag': 1, 'quantity': 600, 'price': 25805, 'no of orders': 7}, {'flag': 1, 'quantity': 4200, 'price': 25800, 'no of orders': 19}, {'flag': 1, 'quantity': 150, 'price': 25795, 'no of orders': 2}], 'best_5_sell_data': [{'flag': 0, 'quantity': 150, 'price': 25870, 'no of orders': 2}, {'flag': 0, 'quantity': 1425, 'price': 25875, 'no of orders': 5}, {'flag': 0, 'quantity': 300, 'price': 25880, 'no of orders': 3}, {'flag': 0, 'quantity': 1725, 'price': 25890, 'no of orders': 10}, {'flag': 0, 'quantity': 825, 'price': 25895, 'no of orders': 8}]}
-
-#? FORMULA OF DIFFERENT VARIABLES IN OPTION CHAIN
-# ltp_change= current running ltp - previous day's closed price/ltp
-
-#? TOKEN NUMBERS OF SPECIAL SYMBOL
-# Nifty 50 (NIFTY) - New Token: 99926000
-# Nifty Bank (BANKNIFTY) - New Token: 99926009
-# token_value + ["99926000"]
+# Start the WebSocket connection
+ws_handler.run()
