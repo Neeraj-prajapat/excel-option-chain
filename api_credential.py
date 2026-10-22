@@ -1,7 +1,7 @@
 from SmartApi import SmartConnect
 from logzero import logger
-import xlwings as xw
 import pyotp
+from get_workbook import wb
 
 def credential():
     """
@@ -16,7 +16,7 @@ def credential():
     """
     try:
         # Open the Excel workbook and access the specified sheet
-        wb = xw.Book("option_chain.xlsm")  # Use the provided path dynamically
+        # wb = xw.Book("option_chain.xlsm")  # Use the provided path dynamically
         credential = wb.sheets["credential"]
 
         # Read credentials from the Excel sheet and ensure they are strings
@@ -49,6 +49,10 @@ def credential():
         print(f"Error initializing API: {e}")
         return None
     
+# ✅ Call once and export
+creds = credential()
+
+
     
 # if __name__ == "__main__":
 #     credentials = credential()
@@ -59,36 +63,3 @@ def credential():
 #         print("Auth Token:", credentials["AUTH_TOKEN"])      
 #     else:
 #         print("Failed to initialize credentials.")
-
-
-
-# # Export variables to a Python file
-# with open("config.py", "w") as file:
-#     file.write(f"API_KEY = '{api_key}'\n")
-#     file.write(f"CLIENT_CODE = '{client_code}'\n")
-#     file.write(f"AUTH_TOKEN = '{auth_token}'\n")
-#     file.write(f"FEED_TOKEN = '{feed_token}'\n")
-#     file.write(f"CORRELATION_ID = '{correlation_id}'\n")
-
-# print("Credentials have been exported to config.py")
-
-
-
-
-
-#? faltu hai just for learning
-# # Open the Excel workbook
-# wb = xw.Book(r'C:\Users\neera\OneDrive\Desktop\start.xlsx')
-# credential = wb.sheets['credential']
-
-# # Read credentials from the Excel sheet and ensure they are strings
-# client_code = str(credential.range("b1").value).strip()
-# password = str(int(credential.range("b2").value)).strip()  # Force conversion to integer first, then string
-# api_key = str(credential.range("b3").value).strip()
-# totp_secret = str(credential.range("b5").value).strip()
-
-# # Debugging: Print credentials
-# print("CLIENT CODE", client_code)
-# print("Password:", password)
-# print("API Key:", api_key)
-# print("TOTP SECRET", totp_secret)

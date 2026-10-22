@@ -1,233 +1,210 @@
-# Import credentials from config.py
-from api_credential import credential
+import threading
+import time
+import pythoncom
+from api_credential import creds
 from SmartApi.smartWebSocketV2 import SmartWebSocketV2
 from get_filtered_tokens import get_filtered_tokens
-from fetch_ltp import fetch_ltp
-import xlwings as xw
 from datetime import datetime
 from logzero import logger
-
+from snapshot_oi import append_snapshot_to_table
+from nifty_snapshot_table import manage_nifty_snapshot_table
+from oi_change_extract import  oi_change_extract
+from get_workbook import wb
 
 # Fetch credentials
-credentials = credential()
-API_KEY = credentials["API_KEY"]
-CLIENT_CODE = credentials["CLIENT_CODE"]
-FEED_TOKEN = credentials["FEED_TOKEN"]
-AUTH_TOKEN = credentials["AUTH_TOKEN"]
-CORRELATION_ID = credentials["CORRELATION_ID"]
+API_KEY = creds["API_KEY"]
+CLIENT_CODE = creds["CLIENT_CODE"]
+FEED_TOKEN = creds["FEED_TOKEN"]
+AUTH_TOKEN = creds["AUTH_TOKEN"]
+CORRELATION_ID = creds["CORRELATION_ID"]
 
-# Use the imported variables
-# print(f"API Key: {API_KEY}")
-# print(f"Client Code: {CLIENT_CODE}")
-# print(f"Auth Token: {AUTH_TOKEN}")
 
-# Fetch LTP
-strike_price_roundup_ltp = fetch_ltp()
-
-## Getting started with SmartAPI Websocket's
-    ####### Websocket V2 sample code #######
-    
 # WebSocket setup
 token_value = get_filtered_tokens()
-correlation_id = CORRELATION_ID
-action = 1
-mode = 3
-
-
 token_list = [
-    {
-        "exchangeType": 2,
-        "tokens": token_value
-    },
-    {
-        "exchangeType": 1,
-        "tokens": ["99926000"]
-    }
+    {"exchangeType": 2, "tokens": token_value},
+    {"exchangeType": 1, "tokens": ["99926000"]}
 ]
 
-
-# Excel setup
-# excel_file_path = r'C:\Users\neera\OneDrive\Desktop\start.xlsx'
-excel_file_path ="option_chain.xlsm"
-wb = xw.Book(excel_file_path)
-sheet_name = "nifty"
-if sheet_name not in [s.name for s in wb.sheets]:
-    sheet = wb.sheets.add(sheet_name)
-else:
-    sheet = wb.sheets[sheet_name]
-
-# Rearrange tokens and set up initial rows
-base_row = 12
-tokens = sorted(map(int, token_value))
-for i in range(0, len(tokens), 2):
-    call_token = tokens[i]
-    put_token = tokens[i + 1] if i + 1 < len(tokens) else None
-    sheet[f'F{base_row}'].value = call_token
-    if put_token:
-        sheet[f'AB{base_row}'].value = put_token
-    base_row += 1
-
-# Function to mimic Excel's MROUND
-def mround(number, multiple):
-    return round(number / multiple) * multiple
-
-number = strike_price_roundup_ltp # Original number
-multiple = 50 # Adjust the step to 50000 for desired output
-
-# Apply mround function to get nearest multiple
-nifty_strike_price = mround(number, multiple)
-print(nifty_strike_price)
-
-# Assign the same value to two cells
-sheet["Q32"].value = nifty_strike_price
-sheet["P8"].value = strike_price_roundup_ltp
+# Global variables
+latest_data = {}  # Dictionary to store the latest data for each token
+sws = None
+sheet = None
 
  
-# WebSocket callbacks
+def initialize_excel():
+    global sheet
+    sheet_name = "nifty"
+
+    if sheet_name in [s.name for s in wb.sheets]:
+        sheet = wb.sheets[sheet_name]
+    else:
+        sheet = wb.sheets.add(sheet_name)
+
+    # Initialize token layout
+    base_row = 12
+    tokens = sorted(map(int, token_value))
+    for i in range(0, len(tokens), 2):
+        call_token = tokens[i]
+        put_token = tokens[i + 1] if i + 1 < len(tokens) else None
+        sheet[f'F{base_row}'].value = call_token
+        if put_token:
+            sheet[f'AB{base_row}'].value = put_token
+        base_row += 1
+        
+    # Define column headers ✅ (Loop + Dictionary) is better in terms of performance and efficiency, especially when dealing with larger data.
+    headers = {
+        'B3': '=MROUND(Q10, 50)', 'P11': "LTP", 'M11': "OI", 'N11': "VOLUME",
+        'C11': "OPEN", 'D11': "HIGH", 'E11': "LOW", 'B11': "CLOSE", 'O11': "LTP CHG",
+        'A11': "TIMESTAMP", 'R11': "LTP", 'U11': "OI", 'T11': "VOLUME",
+        'AE11': "OPEN", 'AD11': "HIGH", 'AC11': "LOW", 'AF11': "CLOSE",
+        'S11': "LTP CHG", 'AG11': "TIMESTAMP"
+    }
+
+    for cell, value in headers.items():
+        sheet[cell].value = value
+        
+    manage_nifty_snapshot_table(wb)
+    oi_change_extract()
+        
+
 def on_data(wsapp, msg):
     try:
-        token = int(msg.get("token")) # Ensure token is treated as an integer
-        ltp = msg.get("last_traded_price")/100
-        oi = msg.get("open_interest")/75
-        volume = msg.get("volume_trade_for_the_day")/75
-        open = msg.get("open_price_of_the_day")/75
-        high = msg.get("high_price_of_the_day")/100
-        low = msg.get("low_price_of_the_day")/100
-        close = msg.get("closed_price")/100
-        ltp_chg = ltp - close
-        
-        timestamp = datetime.fromtimestamp(msg["exchange_timestamp"] / 1000).strftime('%Y-%m-%d %H:%M:%S')
+        token = int(msg.get("token"))
+        data = {
+            "token": token,
+            "ltp": msg.get("last_traded_price") / 100,
+            "oi": msg.get("open_interest") / 75,
+            "volume": msg.get("volume_trade_for_the_day") / 75,
+            "open": msg.get("open_price_of_the_day") / 75,
+            "high": msg.get("high_price_of_the_day") / 100,
+            "low": msg.get("low_price_of_the_day") / 100,
+            "close": msg.get("closed_price") / 100,
+            "timestamp": datetime.fromtimestamp(msg["exchange_timestamp"] / 1000).strftime('%Y-%m-%d %H:%M:%S')
+        }
+        # Update the dictionary with the latest data for this token
+        latest_data[token] = data
+        logger.debug(f"Updated data for token: {token}")
+        logger.info(f"Received token: {token}, LTP: {data['ltp']}, OI: {data['oi']}, Timestamp: {data['timestamp']}, VOLUME: {data['volume']}")
+    except Exception as e:
+        logger.error(f"Data processing error: {e}")
 
-        # Logging the received data
-        logger.info(f"Received token: {token}, LTP: {ltp}, OI: {oi}, Timestamp: {timestamp}, VOLUME: {volume}")
+def process_excel_updates():
+    pythoncom.CoInitialize()
+    last_snapshot_time = time.time()  # Track last snapshot time
+
+    try:
+        while True:
+            # Update Excel with latest WebSocket data
+            for token, data in latest_data.copy().items():
+                update_excel(data)
+
+            # Append snapshot every 60 seconds
+            if time.time() - last_snapshot_time >= 60:
+                append_snapshot_to_table(wb)
+                logger.info("Snapshot appended successfully.")
+                last_snapshot_time = time.time()  # Reset snapshot timer
+
+            time.sleep(0.5)  # Adjust the sleep interval as necessary
+    except KeyboardInterrupt:
+        pass
+    finally:
+        pythoncom.CoUninitialize()
+
+def update_excel(data):
+    try:
+        token = data["token"]
         
-        # Special token handling (NIFTY: 99926000)
         if token == 99926000:
-            sheet['Q10'].value = ltp
-            return   # Exit the function here, no further processing(for this function)
-    
-        # Iterate through the rows to find the matching token in F or R
-        row = 12  # Start at the base row
-        while sheet[f'F{row}'].value or sheet[f'AB{row}'].value:  # Stop when both are empty
+            sheet['Q10'].value = data["ltp"]  # Update Q10 for token 99926000
+        
+        row = 12
+        while sheet[f'F{row}'].value or sheet[f'AB{row}'].value:
             call_token = sheet[f'F{row}'].value
             put_token = sheet[f'AB{row}'].value
 
-
-            if call_token == token:  # If the token matches the call token
-                sheet[f'P11'].value = "LTP"  
-                sheet[f'P{row}'].value = ltp  # Update LTP for the call
-                sheet[f'M11'].value = "OI"   
-                sheet[f'M{row}'].value = oi   # Update OI for the call
-                sheet[f'N11'].value = "VOLUME"
-                sheet[f'N{row}'].value = volume   # Update VOLUME for the 
-                sheet[f'C11'].value = "OPEN"
-                sheet[f'C{row}'].value = open  # Update OPEN for the call
-                sheet[f'D11'].value = "HIGH"
-                sheet[f'D{row}'].value = high   # Update HIGH for the 
-                sheet[f'E11'].value = "LOW"
-                sheet[f'E{row}'].value = low   # Update LOW for the call
-                sheet[f'B11'].value = "CLOSE"
-                sheet[f'B{row}'].value = close   # Update CLOSE for the 
-                sheet[f'O11'].value = "LTP CHG"
-                sheet[f'O{row}'].value = ltp_chg   # Update LTP CHANGE for the call
-                sheet[f'A11'].value = "TIMESTAMP"
-                sheet[f'A{row}'].value = timestamp  # Update timestamp for the call
+            if call_token == token:
+                update_call_row(row, data)
                 break
-
-            elif put_token == token:  # If the token matches the put token
-                sheet[f'R11'].value = "LTP"  
-                sheet[f'R{row}'].value = ltp  # Update LTP for the put
-                sheet[f'U11'].value = "OI"   
-                sheet[f'U{row}'].value = oi   # Update OI for the put
-                sheet[f'T11'].value = "VOLUME"
-                sheet[f'T{row}'].value = volume   # Update VOLUME for the call
-                sheet[f'AE11'].value = "OPEN"
-                sheet[f'AE{row}'].value = open  # Update OPEN for the 
-                sheet[f'AD11'].value = "HIGH"
-                sheet[f'AD{row}'].value = high   # Update HIGH for the call
-                sheet[f'AC11'].value = "LOW"
-                sheet[f'AC{row}'].value = low   # Update LOW for the call
-                sheet[f'AF11'].value = "CLOSE"
-                sheet[f'AF{row}'].value = close   # Update CLOSE for the 
-                sheet[f'S11'].value = "LTP CHG"
-                sheet[f'S{row}'].value = ltp_chg   # Update LTP CHANGE for the 
-                sheet[f'AG11'].value = "TIMESTAMP"
-                sheet[f'AG{row}'].value = timestamp  # Update timestamp for the put
+            elif put_token == token:
+                update_put_row(row, data)
                 break
-
-            row += 1  # Move to the next row
-
+            row += 1
     except Exception as e:
-        logger.error(f"Error in on_data: {e}")
+        logger.error(f"Excel update failed: {e}")
+
+def update_call_row(row, data):
+    sheet[f'P{row}'].value = data["ltp"]
+    sheet[f'M{row}'].value = data["oi"]
+    sheet[f'N{row}'].value = data["volume"]
+    sheet[f'C{row}'].value = data["open"]
+    sheet[f'D{row}'].value = data["high"]
+    sheet[f'E{row}'].value = data["low"]
+    sheet[f'B{row}'].value = data["close"]
+    sheet[f'O{row}'].value = data["ltp"] - data["close"]
+    sheet[f'A{row}'].value = data["timestamp"]
+
+def update_put_row(row, data):
+    sheet[f'R{row}'].value = data["ltp"]
+    sheet[f'U{row}'].value = data["oi"]
+    sheet[f'T{row}'].value = data["volume"]
+    sheet[f'AE{row}'].value = data["open"]
+    sheet[f'AD{row}'].value = data["high"]
+    sheet[f'AC{row}'].value = data["low"]
+    sheet[f'AF{row}'].value = data["close"]
+    sheet[f'S{row}'].value = data["ltp"] - data["close"]
+    sheet[f'AG{row}'].value = data["timestamp"]
+
+def websocket_thread():
+    sws = SmartWebSocketV2(AUTH_TOKEN, API_KEY, CLIENT_CODE, FEED_TOKEN)
+    
+    def on_open(wsapp):
+        logger.info("WebSocket connected")
+        sws.subscribe(CORRELATION_ID, 3, token_list)
+
+    def on_error(wsapp, error):
+        logger.error(f"WebSocket error: {error}")
+
+    def on_close(wsapp):
+        logger.info("WebSocket closed")
+
+    sws.on_open = on_open
+    sws.on_data = on_data
+    sws.on_error = on_error
+    sws.on_close = on_close
+
+    try:
+        logger.info("Starting WebSocket...")
+        sws.connect()
+    except Exception as e:
+        logger.error(f"WebSocket connection failed: {e}")
+    finally:
+        sws.close_connection()
+
+def main():
+    global latest_data
+    latest_data = {}  # Reset the dictionary at the start of each run
+    try:
+        initialize_excel()
+        logger.info("Excel initialized")
+        
+        # Start WebSocket thread
+        ws_thread = threading.Thread(target=websocket_thread, daemon=True)
+        ws_thread.start()
+        
+        # Process Excel updates in the main thread (including snapshot every 60 seconds)
+        process_excel_updates()
+        
+    except KeyboardInterrupt:
+        logger.info("Shutdown requested...")
+    finally:
+        logger.info("Saving and closing workbook...")
+        # wb.save()
+        # wb.close()
+        logger.info("Cleanup complete")
+
+if __name__ == "__main__":
+    main()
 
 
-# def on_data(wsapp, message):
-#     logger.info("Ticks: {}".format(message))
-    # close_connection()
 
-def on_open(wsapp):
-    logger.info("on open")
-    sws.subscribe(correlation_id, mode, token_list)
-    # sws.unsubscribe(correlation_id, mode, token_list1)
-
-
-def on_error(wsapp, error):
-    logger.error(error)
-
-
-def on_close(wsapp):
-    logger.info("Close")
-
-
-
-def close_connection():
-    sws.close_connection()
-
-
-# Assign the callbacks.
-sws = SmartWebSocketV2(AUTH_TOKEN, API_KEY, CLIENT_CODE, FEED_TOKEN)
-sws.on_open = on_open
-sws.on_data = on_data
-sws.on_error = on_error
-sws.on_close = on_close
-
-# Start WebSocket connection
-try:
-    logger.info("Starting WebSocket...")
-    sws.connect()
-except KeyboardInterrupt:
-    logger.info("WebSocket connection terminated by user.")
-finally:
-    logger.info("Closing WebSocket connection...")
-    sws.close_connection()
-# sws.connect()
-####### Websocket V2 sample code ENDS Here #######
-
-
-
-
-
-
-#? Important Notes:- 
-#* Safe Approach
-# ltp = msg.get("last_traded_price", 0) / 100  # Default to 0 if the key doesn't exist #*but ye hamesa exist karta hai api me So, no tension
-# OR
-
-# ltp_raw = msg.get("last_traded_price")
-# if ltp_raw is not None:
-#     ltp = ltp_raw / 100
-# else:
-#     ltp = None  # Or any default value you want
-
-
-
-#? RUNNING MARKET STRIKE PRICE(NIFTY=23200 EXPIRY 23 JAN 2024 ) DATA:-
-#* {'subscription_mode': 3, 'exchange_type': 2, 'token': '54786', 'sequence_number': 32056818, 'exchange_timestamp': 1737356263000, 'last_traded_price': 25820, 'subscription_mode_val': 'SNAP_QUOTE', 'last_traded_quantity': 75, 'average_traded_price': 19815, 'volume_trade_for_the_day': 70813950, 'total_buy_quantity': 605175.0, 'total_sell_quantity': 281850.0, 'open_price_of_the_day': 20550, 'high_price_of_the_day': 26900, 'low_price_of_the_day': 16710, 'closed_price': 18380, 'last_traded_timestamp': 1737356261, 'open_interest': 3118800, 'open_interest_change_percentage': 4602115189163712890, 'upper_circuit_limit': 73165, 'lower_circuit_limit': 5, '52_week_high_price': 72990, '52_week_low_price': 0, 'best_5_buy_data': [{'flag': 1, 'quantity': 450, 'price': 25815, 'no of orders': 3}, {'flag': 1, 'quantity': 375, 'price': 25810, 'no of orders': 4}, {'flag': 1, 'quantity': 600, 'price': 25805, 'no of orders': 7}, {'flag': 1, 'quantity': 4200, 'price': 25800, 'no of orders': 19}, {'flag': 1, 'quantity': 150, 'price': 25795, 'no of orders': 2}], 'best_5_sell_data': [{'flag': 0, 'quantity': 150, 'price': 25870, 'no of orders': 2}, {'flag': 0, 'quantity': 1425, 'price': 25875, 'no of orders': 5}, {'flag': 0, 'quantity': 300, 'price': 25880, 'no of orders': 3}, {'flag': 0, 'quantity': 1725, 'price': 25890, 'no of orders': 10}, {'flag': 0, 'quantity': 825, 'price': 25895, 'no of orders': 8}]}
-
-#? FORMULA OF DIFFERENT VARIABLES IN OPTION CHAIN
-# ltp_change= current running ltp - previous day's closed price/ltp
-
-#? TOKEN NUMBERS OF SPECIAL SYMBOL
-# Nifty 50 (NIFTY) - New Token: 99926000
-# Nifty Bank (BANKNIFTY) - New Token: 99926009
-# token_value + ["99926000"]
