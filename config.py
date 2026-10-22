@@ -1,5 +1,0 @@
-API_KEY = ""
-CLIENT_CODE = ""
-AUTH_TOKEN = ""
-FEED_TOKEN = ""
-CORRELATION_ID = ""
