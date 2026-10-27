@@ -6,11 +6,6 @@
 
 📈 This repository provides a **pure Python implementation** for fetching **real-time option chain data** from **AngelOne WebSocket v2** and saving it to **Excel**. 
 
-
----
-
-💡 **This project also serves as one of the best live examples demonstrating the key differences between WebSocket and HTTPS.**  
-
 ---
 
 
@@ -42,6 +37,26 @@
 
 ---
 
+## 🚀 What's New in v2.0.0
+
+### 🌐 Enhanced Connectivity & Security Upgrade
+* **HTTPS API Integration:** Upgraded security protocols for robust and secure data transfer alongside Angel One WebSockets (v2).
+* **High-Throughput Streaming:** Seamless tick-by-tick real-time option chain data streaming with optimized latency.
+
+### 📊 Advanced Nifty & BankNifty Weekly Range Metrics
+* **Calculated Weekly Ranges:** Highly accurate weekly support and resistance range algorithms for Nifty and BankNifty, derived after extensive statistical testing.
+* **Paper Trading Support:** Native structure to simulate strategies and test paper trades before executing live capital.
+
+### 🎯 OI Percentage & Market Direction Dynamics
+* **Institutional-Grade OI Tracking:** Integrated Open Interest (OI) concentration tracking logic based on key thresholds (e.g., 85%, 95% OI shifts).
+* **At The Money (ATM) State Analysis:** Live indicators when OI is heavily clustered at ATM.
+* **WTB / WTT Detection:** Real-time detection of Weak Towards Bottom (WTB) or Weak Towards Top (WTT) shifts in momentum and institutional pressure to identify potential breakouts or breakdowns early.
+
+### 🛠️ Key Improvements & Fixes
+* Deleted deprecated files and cleaned up legacy codebase for faster load times.
+
+---
+
 ## 📌 Installation
 
 Make sure you have **Python 3.12+** installed.  
@@ -50,3 +65,12 @@ Make sure you have **Python 3.12+** installed.
 git clone https://github.com/Neeraj-prajapat/excel-option-chain.git
 cd excel-option-chain
 pip install -r requirements.txt
+
+
+---
+
+<div align="center">
+  <a href="https://buymeacoffee.com/algolyte" target="_blank">
+    <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="60" width="217">
+  </a>
+</div>
