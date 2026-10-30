@@ -30,13 +30,6 @@ sheet = wb.sheets['snap_nifty']
 # # MySQL Configuration
 # database_name = f"market_{selected_date}"
 
-# db_config = {
-#     "host": "localhost",
-#     "user": "Neeraj Prajapati",
-#     "password": "Nneer@j870342sql",
-#     "database": database_name,
-#     "port": 3306
-# }
 
 def fetch_snapshots():
     """Fetch snapshots grouped by timestamp with 15 strikes each"""
