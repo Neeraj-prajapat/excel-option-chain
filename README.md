@@ -21,7 +21,12 @@
 🔗 **GitHub:** [AngelOne Smart WebSocket V2](https://github.com/angel-one/smartapi-python/blob/main/SmartApi/smartWebSocketV2.py)  
 
 ---
+![Screenshot 1](assets/Screenshot%20(3473).png)
 
+![Screenshot 2](assets/Screenshot%20(3474).png)
+
+
+---
 ## 🎥 YouTube Video  
 📌 Watch the complete tutorial on YouTube:  
 🔗 [Click Here to Watch](https://youtu.be/JbpYethcRF4)  
