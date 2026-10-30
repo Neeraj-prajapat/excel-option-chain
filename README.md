@@ -25,7 +25,7 @@
 
 ![Screenshot 2](assets/Screenshot%20(3474).png)
 
-
+![Screenshot 3](assets/Screenshot%20(3475).png)
 ---
 ## 🎥 YouTube Video  
 📌 Watch the complete tutorial on YouTube:  
